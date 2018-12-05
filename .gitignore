@@ -34,3 +34,5 @@ pids
 Thumbs.db
 typings/
 recordings/*.wav
+package-lock.json
+yarn.lock
