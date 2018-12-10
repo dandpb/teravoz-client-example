@@ -4,9 +4,8 @@ const http = require('http').Server(app);
 const io = require('socket.io')(http);
 const bodyParser = require('body-parser');
 const fs = require('fs');
-const download = require('./download');
-const salesforce = require('./salesforce');
-
+const teravozApi = require('./teravozApi');
+const salesforceApi = require('./salesforceApi');
 
 const TERAVOZ_EVENTS = {
   CALL_NEW : 'call.new',
@@ -19,7 +18,25 @@ const TERAVOZ_EVENTS = {
   ACTOR_RINGING : 'actor.ringing',
   ACTOR_ENTERED : 'actor.entered',
   ACTOR_NO_ANSWER : 'actor.noanswer'
-}
+};
+
+const OUR_NUMBERS = {
+  551131672542 : process.env.TERAVOZ_LINE_551131672542,
+  551141184002 : process.env.TERAVOZ_LINE_551141184002
+};
+
+const INTERNAL_AGENTS = {
+  100 : 'Danilo Silva',
+  101 : 'Emerson',
+  102 : 'Daniella',
+  103 : 'Felipe',
+  104 : 'Rodrigo',
+  105 : 'OM / Mauricio',
+  106 : 'OBZ',
+  107 : 'Consultor',
+  108 : 'Consultor',
+  109 : 'Carina'
+};
 
 
 /**
@@ -64,17 +81,24 @@ app.post('/webhook', (req, res) => {
 
   switch (event.type) {
     case TERAVOZ_EVENTS.CALL_NEW:
+      // caso numero não é interno
       // criar novo ticket
       // colocar o call_id
       // direction: 'inbound' --> externa ..... direction: 'internal' --> internal
       // caso seja uma ligação externa pro suporte --> atribuir para o grupo correto seguindo um DexPara configuravel
-      salesforce.createCase(event.call_id);
+
+      if(!INTERNAL_AGENTS[event.their_number]){
+        var group = OUR_NUMBERS[event.out_number] ? OUR_NUMBERS[event.out_number] : "Suporte";
+        salesforceApi.createCase(event.call_id, event.their_number, group);
+      }
 
       break;
     case TERAVOZ_EVENTS.CALL_FINISHED:
       // Atulizar a duração do chamado
-      salesforce.updateCase(event.call_id, {Horas_de_atendimento__c: 666});
-
+      teravozApi.callInfo(TERAVOZ_CREDENTIALS, event.call_id).then(function (callInfo) {
+        var hours = (callInfo.talk_time/60/60).toPrecision(3);
+        salesforceApi.updateCase(event.call_id, {Horas_de_atendimento__c: hours});
+      });
       break;
     case TERAVOZ_EVENTS.CALL_DATA_PROVIDED:
       // Caso transfer, atualiza responsavel do chamado
@@ -84,11 +108,13 @@ app.post('/webhook', (req, res) => {
     case TERAVOZ_EVENTS.CALL_RECORDING_AVAILABLE:
         // Coloca link da gravação no CallLog do Chamado, junto com usuario e senha para baixa-los
         var props = {
-          call_link__c: 'link da ligação:' + event.url + '\n user: ' + process.env.SALESFORCE_TERAVOZ_LOGIN + '\n password: ' + process.env.SALESFORCE_TERAVOZ_PASSWORD
+          Description: 'link da ligação: ' + event.url + '\n user: ' + process.env.TERAVOZ_LOGIN + '\n password: ' + process.env.TERAVOZ_PASSWORD,
+          call_link__c: event.url + '\n user: ' + process.env.TERAVOZ_LOGIN + '\n password: ' + process.env.TERAVOZ_PASSWORD
         };
-        salesforce.updateCase(event.call_id, props);
+        salesforceApi.updateCase(event.call_id, props);
 
-        download(TERAVOZ_CREDENTIALS, event.url, (err, fileName) => {
+        // download da ligação para o container
+      teravozApi.download(TERAVOZ_CREDENTIALS, event.url, (err, fileName) => {
           if (err) {
             console.error('Não foi possível efetuar o download.', err);
           } else {

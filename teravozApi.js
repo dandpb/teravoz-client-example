@@ -1,5 +1,8 @@
 const request = require('request');
 const fs = require('fs');
+const axios = require("axios");
+
+var teravozApi = module.exports = {};
 
 /**
   download(url)
@@ -10,7 +13,7 @@ const fs = require('fs');
   file name: '1463669263.30033.wav'
   Will be recorded on `./recordings` path
 */
-module.exports = function download(credentials, url, downloadCb) {
+teravozApi.download = function(credentials, url, downloadCb) {
   const encodedCredentials = Buffer.from(credentials).toString('base64');
   const fileName = url.substring(url.lastIndexOf('/') + 1);
   request
@@ -29,4 +32,20 @@ module.exports = function download(credentials, url, downloadCb) {
     }
   })
   .pipe(fs.createWriteStream(`./recordings/${fileName}`));
+}
+
+teravozApi.callInfo = function(credentials, callId) {
+  const encodedCredentials = Buffer.from(credentials).toString('base64');
+  const url = "https://api.teravoz.com.br/calls/" + callId;
+  return axios.get(url,{
+    headers: {
+      'Authorization': `Basic ${encodedCredentials}`
+    }
+  }).then(function (response) {
+      return response.data;
+    })
+    .catch(function (error) {
+      console.log(error);
+      return error;
+    });
 }
